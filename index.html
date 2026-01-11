@@ -748,22 +748,162 @@
         };
 
         // MIC, VOICE, EXPORT
-        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'es-ES';
-        document.getElementById('speech-btn').onclick = () => recognition.start();
-        recognition.onstart = () => document.getElementById('speech-status').classList.remove('hidden');
-        recognition.onend = () => document.getElementById('speech-status').classList.add('hidden');
-        recognition.onresult = (e) => document.getElementById('assistant-description').value += e.results[0][0].transcript;
+        let recognition;
+        try {
+            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.lang = 'es-ES';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            document.getElementById('speech-btn').onclick = () => recognition.start();
+            recognition.onstart = () => {
+                document.getElementById('speech-status').classList.remove('hidden');
+                document.getElementById('speech-btn').classList.add('listening');
+            };
+            recognition.onend = () => {
+                document.getElementById('speech-status').classList.add('hidden');
+                document.getElementById('speech-btn').classList.remove('listening');
+            };
+            recognition.onresult = (e) => document.getElementById('assistant-description').value += e.results[0][0].transcript;
+            recognition.onerror = (e) => {
+                console.error('Error de reconocimiento:', e.error);
+                document.getElementById('speech-status').classList.add('hidden');
+                document.getElementById('speech-btn').classList.remove('listening');
+            };
+        } catch (e) {
+            console.log('Reconocimiento de voz no soportado');
+            document.getElementById('speech-btn').style.display = 'none';
+        }
+
+        // Text-to-Speech mejorado para móviles
+        let voicesLoaded = false;
+        let spanishVoice = null;
+
+        function loadVoices() {
+            const voices = speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                voicesLoaded = true;
+                // Buscar voz en español
+                spanishVoice = voices.find(v => v.lang.startsWith('es')) || voices[0];
+            }
+        }
+
+        // Cargar voces (necesario para móviles)
+        loadVoices();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = loadVoices;
+        }
 
         document.getElementById('speak-result-btn').onclick = () => {
-            if (speechSynthesis.speaking) return speechSynthesis.cancel();
-            speechSynthesis.speak(new SpeechSynthesisUtterance(assistantResult.innerText));
+            // Cancelar si ya está hablando
+            if (speechSynthesis.speaking) {
+                speechSynthesis.cancel();
+                return;
+            }
+
+            const text = assistantResult.innerText;
+            if (!text || text.trim() === '') {
+                alert('No hay texto para leer');
+                return;
+            }
+
+            // Dividir texto largo en fragmentos (máx 200 caracteres para móviles)
+            const maxLength = 200;
+            const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+            let chunks = [];
+            let currentChunk = '';
+
+            sentences.forEach(sentence => {
+                if ((currentChunk + sentence).length < maxLength) {
+                    currentChunk += sentence;
+                } else {
+                    if (currentChunk) chunks.push(currentChunk.trim());
+                    currentChunk = sentence;
+                }
+            });
+            if (currentChunk) chunks.push(currentChunk.trim());
+
+            // Hablar cada fragmento secuencialmente
+            let index = 0;
+            function speakNext() {
+                if (index < chunks.length) {
+                    const utterance = new SpeechSynthesisUtterance(chunks[index]);
+                    utterance.lang = 'es-ES';
+                    utterance.rate = 1.0;
+                    utterance.pitch = 1.0;
+                    if (spanishVoice) utterance.voice = spanishVoice;
+                    utterance.onend = () => {
+                        index++;
+                        speakNext();
+                    };
+                    utterance.onerror = (e) => {
+                        console.error('Error TTS:', e);
+                        index++;
+                        speakNext();
+                    };
+                    speechSynthesis.speak(utterance);
+                }
+            }
+            speakNext();
         };
+
         document.getElementById('copy-to-clipboard-btn').onclick = () => {
-            navigator.clipboard.writeText(assistantResult.innerText).then(() => alert("Copiado"));
+            navigator.clipboard.writeText(assistantResult.innerText).then(() => alert("Copiado al portapapeles"));
         };
+
+        // PDF mejorado - no corta el contenido
         document.getElementById('download-pdf-btn').onclick = () => {
-            html2pdf().from(assistantResult).save("Informe_Emergencia.pdf");
+            const element = assistantResult;
+            const titulo = modalTitle.textContent || 'Informe de Emergencia';
+
+            // Crear contenedor temporal con estilos para PDF
+            const pdfContainer = document.createElement('div');
+            pdfContainer.style.padding = '20px';
+            pdfContainer.style.fontFamily = 'Arial, sans-serif';
+            pdfContainer.style.fontSize = '12px';
+            pdfContainer.style.lineHeight = '1.6';
+            pdfContainer.style.color = '#333';
+
+            // Añadir cabecera
+            pdfContainer.innerHTML = `
+                <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 15px;">
+                    <h1 style="color: #1e40af; font-size: 18px; margin: 0;">Emergencias Sanitarias - Centro Educativo</h1>
+                    <p style="color: #666; font-size: 11px; margin: 5px 0 0 0;">Protocolo de Andalucía</p>
+                </div>
+                <h2 style="color: #1e40af; font-size: 14px; margin-bottom: 15px;">${titulo}</h2>
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                    ${element.innerHTML}
+                </div>
+                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; text-align: center; color: #666; font-size: 10px;">
+                    <p>Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}</p>
+                    <p>Por Jorge García con tecnología Gemini</p>
+                </div>
+            `;
+
+            // Configuración de html2pdf para no cortar contenido
+            const opt = {
+                margin: [10, 10, 10, 10],
+                filename: `Informe_Emergencia_${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    letterRendering: true,
+                    logging: false
+                },
+                jsPDF: {
+                    unit: 'mm',
+                    format: 'a4',
+                    orientation: 'portrait'
+                },
+                pagebreak: {
+                    mode: ['avoid-all', 'css', 'legacy'],
+                    before: '.page-break-before',
+                    after: '.page-break-after',
+                    avoid: ['p', 'li', 'h1', 'h2', 'h3', 'h4', 'strong']
+                }
+            };
+
+            html2pdf().set(opt).from(pdfContainer).save();
         };
 
         // Botón de acceso rápido a la IA desde la página principal
