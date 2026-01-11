@@ -774,77 +774,161 @@
             document.getElementById('speech-btn').style.display = 'none';
         }
 
-        // Text-to-Speech mejorado para móviles
-        let voicesLoaded = false;
+        // Text-to-Speech - Sistema completo reescrito
+        let isSpeaking = false;
+        let shouldStopSpeaking = false;
         let spanishVoice = null;
+        const speakBtn = document.getElementById('speak-result-btn');
 
+        // Cargar voces disponibles
         function loadVoices() {
             const voices = speechSynthesis.getVoices();
             if (voices.length > 0) {
-                voicesLoaded = true;
-                // Buscar voz en español
-                spanishVoice = voices.find(v => v.lang.startsWith('es')) || voices[0];
+                // Priorizar voces en español de España, luego cualquier español
+                spanishVoice = voices.find(v => v.lang === 'es-ES')
+                    || voices.find(v => v.lang.startsWith('es'))
+                    || voices[0];
+                console.log('Voz seleccionada:', spanishVoice?.name);
             }
         }
 
-        // Cargar voces (necesario para móviles)
+        // Cargar voces (en móviles se cargan de forma asíncrona)
         loadVoices();
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = loadVoices;
+        speechSynthesis.onvoiceschanged = loadVoices;
+
+        // Función para detener el audio completamente
+        function stopSpeaking() {
+            shouldStopSpeaking = true;
+            isSpeaking = false;
+            speechSynthesis.cancel();
+            updateSpeakButton(false);
         }
 
-        document.getElementById('speak-result-btn').onclick = () => {
-            // Cancelar si ya está hablando
-            if (speechSynthesis.speaking) {
-                speechSynthesis.cancel();
-                return;
+        // Actualizar apariencia del botón
+        function updateSpeakButton(speaking) {
+            if (speaking) {
+                speakBtn.innerHTML = `
+                    <svg class="w-6 h-6 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>`;
+                speakBtn.title = 'Detener audio';
+            } else {
+                speakBtn.innerHTML = `
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .341.028.675.084 1.001.342 1.24 1.518 1.904 2.66 1.904h1.932l4.5 4.5c.944.945 2.56.276 2.56-1.06V4.06ZM18.584 12c0-1.801-1.01-3.37-2.5-4.243v8.487c1.49-1.09 2.5-2.678 2.5-4.244Z"/>
+                    </svg>`;
+                speakBtn.title = 'Leer en voz alta';
             }
+        }
 
-            const text = assistantResult.innerText;
+        // Función principal de lectura
+        function speakText(text) {
             if (!text || text.trim() === '') {
                 alert('No hay texto para leer');
                 return;
             }
 
-            // Dividir texto largo en fragmentos (máx 200 caracteres para móviles)
-            const maxLength = 200;
-            const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-            let chunks = [];
-            let currentChunk = '';
+            shouldStopSpeaking = false;
+            isSpeaking = true;
+            updateSpeakButton(true);
 
-            sentences.forEach(sentence => {
-                if ((currentChunk + sentence).length < maxLength) {
-                    currentChunk += sentence;
+            // Limpiar texto de elementos HTML y caracteres especiales
+            const cleanText = text
+                .replace(/\n+/g, '. ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            // Dividir en oraciones (máx 150 caracteres para mejor compatibilidad móvil)
+            const maxLen = 150;
+            const parts = cleanText.match(/[^.!?]*[.!?]+/g) || [cleanText];
+            const chunks = [];
+            let current = '';
+
+            parts.forEach(part => {
+                if ((current + part).length <= maxLen) {
+                    current += part;
                 } else {
-                    if (currentChunk) chunks.push(currentChunk.trim());
-                    currentChunk = sentence;
+                    if (current) chunks.push(current.trim());
+                    // Si una oración es muy larga, dividirla por comas
+                    if (part.length > maxLen) {
+                        const subParts = part.split(',');
+                        subParts.forEach(sub => {
+                            if (sub.trim()) chunks.push(sub.trim());
+                        });
+                    } else {
+                        current = part;
+                    }
                 }
             });
-            if (currentChunk) chunks.push(currentChunk.trim());
+            if (current) chunks.push(current.trim());
 
-            // Hablar cada fragmento secuencialmente
+            console.log('Fragmentos a leer:', chunks.length);
+
             let index = 0;
-            function speakNext() {
-                if (index < chunks.length) {
-                    const utterance = new SpeechSynthesisUtterance(chunks[index]);
-                    utterance.lang = 'es-ES';
-                    utterance.rate = 1.0;
-                    utterance.pitch = 1.0;
-                    if (spanishVoice) utterance.voice = spanishVoice;
-                    utterance.onend = () => {
-                        index++;
-                        speakNext();
-                    };
-                    utterance.onerror = (e) => {
-                        console.error('Error TTS:', e);
-                        index++;
-                        speakNext();
-                    };
-                    speechSynthesis.speak(utterance);
+
+            function readNext() {
+                // Verificar si se debe detener
+                if (shouldStopSpeaking || index >= chunks.length) {
+                    isSpeaking = false;
+                    updateSpeakButton(false);
+                    return;
                 }
+
+                const utterance = new SpeechSynthesisUtterance(chunks[index]);
+                utterance.lang = 'es-ES';
+                utterance.rate = 0.95;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                if (spanishVoice) {
+                    utterance.voice = spanishVoice;
+                }
+
+                utterance.onend = () => {
+                    if (!shouldStopSpeaking) {
+                        index++;
+                        // Pequeña pausa entre fragmentos
+                        setTimeout(readNext, 100);
+                    }
+                };
+
+                utterance.onerror = (event) => {
+                    console.error('Error TTS:', event.error);
+                    if (!shouldStopSpeaking && event.error !== 'interrupted') {
+                        index++;
+                        setTimeout(readNext, 100);
+                    }
+                };
+
+                // En Chrome móvil, hay un bug que requiere esto
+                speechSynthesis.cancel();
+                setTimeout(() => {
+                    if (!shouldStopSpeaking) {
+                        speechSynthesis.speak(utterance);
+                    }
+                }, 10);
             }
-            speakNext();
+
+            readNext();
+        }
+
+        // Event listener del botón
+        speakBtn.onclick = () => {
+            if (isSpeaking) {
+                stopSpeaking();
+            } else {
+                const text = assistantResult.innerText;
+                speakText(text);
+            }
         };
+
+        // Detener audio cuando se cierra el modal
+        document.getElementById('modal-close').addEventListener('click', stopSpeaking);
+        document.getElementById('modal-overlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modal-overlay')) {
+                stopSpeaking();
+            }
+        });
 
         document.getElementById('copy-to-clipboard-btn').onclick = () => {
             navigator.clipboard.writeText(assistantResult.innerText).then(() => alert("Copiado al portapapeles"));
