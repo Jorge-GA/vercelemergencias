@@ -15,9 +15,9 @@ module.exports = async (req, res) => {
         }
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Usamos gemini-1.5-flash para rapidez y eficiencia en emergencias
+        // Usamos gemini-2.0-flash para rapidez y eficiencia en emergencias
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash",
             systemInstruction: systemInstruction || "Eres un asistente experto en primeros auxilios y emergencias sanitarias."
         });
 
