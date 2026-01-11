@@ -11,8 +11,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Biblioteca para PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.2/html2pdf.bundle.min.js"></script>
+    <!-- Biblioteca para PDF con texto seleccionable -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <!-- Biblioteca para Markdown (AÑADIDA para evitar asteriscos) -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
@@ -934,73 +935,77 @@
             navigator.clipboard.writeText(assistantResult.innerText).then(() => alert("Copiado al portapapeles"));
         };
 
-        // PDF mejorado - con confirmación antes de descargar
+        // PDF mejorado - con texto seleccionable y confirmación
         document.getElementById('download-pdf-btn').onclick = () => {
-            // Mostrar confirmación antes de descargar
             const confirmar = confirm(
                 '📄 Descargar Informe en PDF\n\n' +
-                '• El PDF se generará como imagen de alta calidad.\n' +
-                '• Incluirá toda la respuesta del asistente.\n' +
-                '• Si necesitas editar el texto, usa "Copiar" y pégalo en Word.\n\n' +
+                '• El PDF se generará con texto SELECCIONABLE.\n' +
+                '• Incluirá toda la respuesta del asistente.\n\n' +
                 '¿Deseas continuar con la descarga?'
             );
 
             if (!confirmar) return;
 
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
             const element = assistantResult;
             const titulo = modalTitle.textContent || 'Informe de Emergencia';
 
-            // Crear contenedor temporal con estilos para PDF
-            const pdfContainer = document.createElement('div');
-            pdfContainer.style.padding = '20px';
-            pdfContainer.style.fontFamily = 'Arial, sans-serif';
-            pdfContainer.style.fontSize = '12px';
-            pdfContainer.style.lineHeight = '1.6';
-            pdfContainer.style.color = '#333';
-            pdfContainer.style.backgroundColor = '#ffffff';
+            // Configuración de página
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const margin = 15;
+            const contentWidth = pageWidth - (margin * 2);
+            let y = 20;
 
-            // Añadir cabecera
-            pdfContainer.innerHTML = `
-                <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 15px;">
-                    <h1 style="color: #1e40af; font-size: 18px; margin: 0;">Emergencias Sanitarias - Centro Educativo</h1>
-                    <p style="color: #666; font-size: 11px; margin: 5px 0 0 0;">Protocolo de Andalucía</p>
-                </div>
-                <h2 style="color: #1e40af; font-size: 14px; margin-bottom: 15px;">${titulo}</h2>
-                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
-                    ${element.innerHTML}
-                </div>
-                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; text-align: center; color: #666; font-size: 10px;">
-                    <p>Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}</p>
-                    <p>Por Jorge García con tecnología Gemini</p>
-                </div>
-            `;
+            // --- CABECERA ---
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(16);
+            doc.setTextColor(30, 64, 175); // Color azul #1e40af
+            doc.text("Emergencias Sanitarias - Centro Educativo", pageWidth / 2, y, { align: "center" });
 
-            // Configuración de html2pdf para no cortar contenido
-            const opt = {
-                margin: [10, 10, 10, 10],
-                filename: `Informe_Emergencia_${new Date().toISOString().split('T')[0]}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: {
-                    scale: 2,
-                    useCORS: true,
-                    letterRendering: true,
-                    logging: false,
-                    backgroundColor: '#ffffff'
-                },
-                jsPDF: {
-                    unit: 'mm',
-                    format: 'a4',
-                    orientation: 'portrait'
-                },
-                pagebreak: {
-                    mode: ['avoid-all', 'css', 'legacy'],
-                    before: '.page-break-before',
-                    after: '.page-break-after',
-                    avoid: ['p', 'li', 'h1', 'h2', 'h3', 'h4', 'strong']
+            y += 7;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text("Protocolo de Andalucía", pageWidth / 2, y, { align: "center" });
+
+            y += 5;
+            doc.setDrawColor(59, 130, 246); // Línea azul #3b82f6
+            doc.setLineWidth(0.5);
+            doc.line(margin, y, pageWidth - margin, y);
+
+            y += 10;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(30, 64, 175);
+            doc.text(titulo, margin, y);
+
+            y += 10;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(11);
+            doc.setTextColor(0, 0, 0);
+
+            // --- CONTENIDO (Texto seleccionable) ---
+            const lines = doc.splitTextToSize(element.innerText, contentWidth);
+
+            lines.forEach(line => {
+                if (y > 275) {
+                    doc.addPage();
+                    y = 20;
                 }
-            };
+                doc.text(line, margin, y);
+                y += 6;
+            });
 
-            html2pdf().set(opt).from(pdfContainer).save();
+            // --- PIE DE PÁGINA ---
+            const footerY = 285;
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            const dateStr = `Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}`;
+            doc.text(dateStr, pageWidth / 2, footerY - 5, { align: "center" });
+            doc.text("Por Jorge García con tecnología Gemini", pageWidth / 2, footerY, { align: "center" });
+
+            doc.save(`Informe_Emergencia_${new Date().toISOString().split('T')[0]}.pdf`);
         };
 
         // Botón de acceso rápido a la IA desde la página principal
