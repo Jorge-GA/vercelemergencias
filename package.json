@@ -1,0 +1,8 @@
+{
+    "name": "emergency-ia-app",
+    "version": "1.0.0",
+    "description": "Cuadro de Mando - Emergencias Sanitarias con IA",
+    "dependencies": {
+        "@google/generative-ai": "^0.21.0"
+    }
+}
