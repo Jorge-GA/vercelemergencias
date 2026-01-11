@@ -934,8 +934,19 @@
             navigator.clipboard.writeText(assistantResult.innerText).then(() => alert("Copiado al portapapeles"));
         };
 
-        // PDF mejorado - no corta el contenido
+        // PDF mejorado - con confirmación antes de descargar
         document.getElementById('download-pdf-btn').onclick = () => {
+            // Mostrar confirmación antes de descargar
+            const confirmar = confirm(
+                '📄 Descargar Informe en PDF\n\n' +
+                '• El PDF se generará como imagen de alta calidad.\n' +
+                '• Incluirá toda la respuesta del asistente.\n' +
+                '• Si necesitas editar el texto, usa "Copiar" y pégalo en Word.\n\n' +
+                '¿Deseas continuar con la descarga?'
+            );
+
+            if (!confirmar) return;
+
             const element = assistantResult;
             const titulo = modalTitle.textContent || 'Informe de Emergencia';
 
@@ -946,6 +957,7 @@
             pdfContainer.style.fontSize = '12px';
             pdfContainer.style.lineHeight = '1.6';
             pdfContainer.style.color = '#333';
+            pdfContainer.style.backgroundColor = '#ffffff';
 
             // Añadir cabecera
             pdfContainer.innerHTML = `
@@ -972,7 +984,8 @@
                     scale: 2,
                     useCORS: true,
                     letterRendering: true,
-                    logging: false
+                    logging: false,
+                    backgroundColor: '#ffffff'
                 },
                 jsPDF: {
                     unit: 'mm',
